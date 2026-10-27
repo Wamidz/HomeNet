@@ -1,0 +1,37 @@
+﻿<Window x:Class="HomeNet.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:HomeNet"
+        mc:Ignorable="d"
+        Title="MainWindow" Height="450" Width="800">
+    <Grid>
+        <DockPanel>
+
+            <Grid DockPanel.Dock="Top" Height="40" Background="Gray">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <TextBox x:Name="searchBar" 
+                         Grid.Column="0" 
+                         Height="25" 
+                         Margin="10,0,10,0" 
+                         VerticalAlignment="Center" />
+
+                <Button x:Name="searchButton" 
+                        Grid.Column="1" 
+                        Content="Search" 
+                        Height="25" 
+                        Width="60" 
+                        Margin="0,0,10,0" 
+                        VerticalAlignment="Center" Click="searchButton_Click" />
+            </Grid>
+
+            <TextBlock x:Name="renderField" 
+                       TextWrapping="NoWrap" />
+        </DockPanel>
+    </Grid>
+</Window>
