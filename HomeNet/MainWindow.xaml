@@ -13,6 +13,7 @@
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
                 <TextBox x:Name="searchBar" 
@@ -21,17 +22,34 @@
                          Margin="10,0,10,0" 
                          VerticalAlignment="Center" />
 
+                <ProgressBar x:Name="loadingProgressBar"
+                             Grid.Column="1"
+                             Width="80" Height="15"
+                             Margin="0,0,10,0"
+                             IsIndeterminate="True"
+                             Visibility="Collapsed"
+                             VerticalAlignment="Center" />
+
                 <Button x:Name="searchButton" 
-                        Grid.Column="1" 
+                        Grid.Column="2" 
                         Content="Search" 
                         Height="25" 
                         Width="60" 
                         Margin="0,0,10,0" 
-                        VerticalAlignment="Center" Click="searchButton_Click" />
+                        VerticalAlignment="Center" 
+                        Click="searchButton_Click" />
             </Grid>
 
-            <TextBlock x:Name="renderField" 
-                       TextWrapping="NoWrap" />
+            <ScrollViewer>
+                <TextBox x:Name="renderField"
+                         TextWrapping="Wrap"
+                         Margin="10"
+                         IsReadOnly="True"
+                         Background="Transparent"
+                         BorderThickness="0"
+                         Padding="0"
+                         Focusable="True" />
+            </ScrollViewer>
         </DockPanel>
     </Grid>
 </Window>
