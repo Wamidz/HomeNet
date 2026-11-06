@@ -1,10 +1,12 @@
-﻿using System.IO;
+﻿using System;
+using System.IO;
 using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
 using System.Text;
+using System.Threading.Tasks;
 
-namespace HomeNet
+namespace HomeNet.Networking
 {
     public class HomeNetEngine
     {
@@ -17,9 +19,18 @@ namespace HomeNet
             _urlCallback = urlCallback;
         }
 
-        public async Task<string> FetchPageAsync(string inputUrl)
+        public async Task<string> FetchPageAsync(string inputUrl, int redirectCount = 0)
         {
-            if (!inputUrl.StartsWith("http://") && !inputUrl.StartsWith("https://"))
+            if (redirectCount > 5)
+            {
+                throw new Exception("Too many redirects (infinite loop detected).");
+            }
+
+            if (inputUrl.StartsWith("//"))
+            {
+                inputUrl = "https:" + inputUrl;
+            }
+            else if (!inputUrl.StartsWith("http://") && !inputUrl.StartsWith("https://"))
             {
                 inputUrl = "https://" + inputUrl;
             }
@@ -27,6 +38,7 @@ namespace HomeNet
             Uri targetUri = new Uri(inputUrl);
             string hostname = targetUri.Host;
             int port = targetUri.Port;
+            string pathAndQuery = targetUri.PathAndQuery;
 
             _statusCallback($"Resolving DNS for {hostname}...");
             IPAddress[] resolvedAddresses = await Dns.GetHostAddressesAsync(hostname);
@@ -52,7 +64,7 @@ namespace HomeNet
                     _statusCallback("Port 80 detected. Proceeding with unsecure HTTP connection...");
                 }
 
-                string httpRequest = "GET / HTTP/1.1\r\n" +
+                string httpRequest = $"GET {pathAndQuery} HTTP/1.1\r\n" +
                                      $"Host: {hostname}\r\n" +
                                      "User-Agent: HomeNet/0.1\r\n" +
                                      "Connection: close\r\n\r\n";
@@ -68,7 +80,7 @@ namespace HomeNet
 
                 while ((bytesRead = await networkStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
                 {
-                    string chunkText = Encoding.ASCII.GetString(buffer, 0, bytesRead);
+                    string chunkText = Encoding.UTF8.GetString(buffer, 0, bytesRead);
                     responseBuilder.Append(chunkText);
                 }
 
@@ -76,7 +88,9 @@ namespace HomeNet
 
                 if (fullResponse.StartsWith("HTTP/1.1 301") ||
                     fullResponse.StartsWith("HTTP/1.1 302") ||
-                    fullResponse.StartsWith("HTTP/1.1 307"))
+                    fullResponse.StartsWith("HTTP/1.1 303") ||
+                    fullResponse.StartsWith("HTTP/1.1 307") ||
+                    fullResponse.StartsWith("HTTP/1.1 308"))
                 {
                     string[] lines = fullResponse.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
                     foreach (string line in lines)
@@ -84,10 +98,16 @@ namespace HomeNet
                         if (line.StartsWith("Location:", StringComparison.OrdinalIgnoreCase))
                         {
                             string redirectUrl = line.Substring("Location:".Length).Trim();
+
+                            if (Uri.TryCreate(targetUri, redirectUrl, out Uri absoluteRedirectUri))
+                            {
+                                redirectUrl = absoluteRedirectUri.ToString();
+                            }
+
                             _statusCallback($"Redirect detected! Following to: {redirectUrl}...");
                             _urlCallback(redirectUrl);
                             await Task.Delay(1000);
-                            return await FetchPageAsync(redirectUrl);
+                            return await FetchPageAsync(redirectUrl, redirectCount + 1);
                         }
                     }
                 }
