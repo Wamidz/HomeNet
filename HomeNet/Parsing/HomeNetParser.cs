@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Navigation;
@@ -30,7 +31,8 @@ namespace HomeNet.Parsing
 
             string processedHtml = Regex.Replace(cleanedHtml, @"\r?\n\s*", " ");
 
-            string pattern = @"<(h[1-6]|p|li|button|div|section|header|footer|article|nav)(?:\s+([^>]*))?>(.*?)</\1>|<img[^>]+src\s*=\s*(?:""([^""]*)""|'([^']*)'|([^\s>]+))[^>]*>";
+            // Added <ol> to the main tag matching pattern
+            string pattern = @"<(h[1-6]|p|li|button|div|section|header|footer|article|nav|form|ol)(?:\s+([^>]*))?>(.*?)</\1>|<input(?:\s+([^>]*))?/?>|<img[^>]+src\s*=\s*(?:""([^""]*)""|'([^']*)'|([^\s>]+))[^>]*>";
             MatchCollection matches = Regex.Matches(processedHtml, pattern, RegexOptions.Singleline | RegexOptions.IgnoreCase);
 
             if (matches.Count == 0)
@@ -61,13 +63,13 @@ namespace HomeNet.Parsing
 
                         bool isFlexContainer = tagName == "header" || tagName == "nav" || (!string.IsNullOrEmpty(className) && className.Contains("meny"));
 
-                        if ((tagName == "div" || tagName == "section" || tagName == "article" || tagName == "nav" || tagName == "header")
-                            && string.IsNullOrEmpty(className) && string.IsNullOrEmpty(idName) && !innerHtml.Contains("<a ") && !isFlexContainer)
+                        if ((tagName == "div" || tagName == "section" || tagName == "article" || tagName == "nav" || tagName == "header" || tagName == "form" || tagName == "ol")
+                            && string.IsNullOrEmpty(className) && string.IsNullOrEmpty(idName) && !innerHtml.Contains("<a ") && !innerHtml.Contains("<input") && !isFlexContainer)
                         {
                             continue;
                         }
 
-                        // Handle <header> specifically to capture both its heading title and nav links
+                        // Handle <header> specifically
                         if (tagName == "header")
                         {
                             Dictionary<string, string> headerStyles = _cssParser.ResolveStylesForElement(storedCssRules, tagName, className, idName);
@@ -115,35 +117,130 @@ namespace HomeNet.Parsing
                             continue;
                         }
 
-                        // Handle styled container card blocks (like #welcome)
-                        if ((tagName == "div" || tagName == "section") && (!string.IsNullOrEmpty(className) || !string.IsNullOrEmpty(idName)))
+                        // Handle <ol> / <ul> search results lists
+                        if (tagName == "ol" || tagName == "ul")
                         {
-                            Dictionary<string, string> divStyles = _cssParser.ResolveStylesForElement(storedCssRules, tagName, className, idName);
+                            Section listSection = new Section();
+                            listSection.Margin = new Thickness(24, 10, 24, 10);
 
-                            Section divSection = new Section();
-                            if (divStyles.TryGetValue("background-color", out string divBg))
+                            string itemPattern = @"<(?:li|article)[^>]*>(.*?)</(?:li|article)>";
+                            MatchCollection itemMatches = Regex.Matches(innerHtml, itemPattern, RegexOptions.Singleline | RegexOptions.IgnoreCase);
+
+                            foreach (Match itemMatch in itemMatches)
                             {
-                                Brush bgBrush = ConvertCssColor(divBg);
-                                if (bgBrush != null) divSection.Background = bgBrush;
+                                string itemContent = itemMatch.Groups[1].Value;
+
+                                Paragraph itemP = new Paragraph();
+                                itemP.Margin = new Thickness(0, 0, 0, 16);
+                                itemP.FontSize = 14;
+
+                                Match linkMatch = Regex.Match(itemContent, @"<a\s+([^>]*?)>(.*?)</a>", RegexOptions.Singleline | RegexOptions.IgnoreCase);
+                                if (linkMatch.Success)
+                                {
+                                    string linkAttrs = linkMatch.Groups[1].Value;
+                                    string linkText = CleanText(linkMatch.Groups[2].Value);
+                                    string href = ExtractAttribute(linkAttrs, "href");
+
+                                    if (!string.IsNullOrEmpty(linkText))
+                                    {
+                                        Hyperlink hyperlink = new Hyperlink(new Run(linkText))
+                                        {
+                                            NavigateUri = !string.IsNullOrEmpty(href) ? new Uri(href, UriKind.RelativeOrAbsolute) : null,
+                                            FontSize = 16,
+                                            FontWeight = FontWeights.Bold
+                                        };
+
+                                        hyperlink.RequestNavigate += (sender, args) =>
+                                        {
+                                            if (args.Uri != null)
+                                            {
+                                                onNavigate?.Invoke(args.Uri.ToString());
+                                                args.Handled = true;
+                                            }
+                                        };
+
+                                        itemP.Inlines.Add(hyperlink);
+                                        itemP.Inlines.Add(new Run("\n"));
+                                    }
+                                }
+
+                                string plainSnippet = CleanText(itemContent);
+                                if (!string.IsNullOrEmpty(plainSnippet))
+                                {
+                                    itemP.Inlines.Add(new Run(plainSnippet));
+                                }
+
+                                if (itemP.Inlines.Count > 0)
+                                {
+                                    listSection.Blocks.Add(itemP);
+                                }
                             }
-                            divSection.Margin = new Thickness(20, 30, 20, 30);
-                            divSection.Padding = new Thickness(24);
 
-                            ParseContainerContent(innerHtml, divSection, storedCssRules, onNavigate);
-
-                            if (divSection.Blocks.Count > 0)
+                            if (listSection.Blocks.Count > 0)
                             {
-                                rootSection.Blocks.Add(divSection);
+                                rootSection.Blocks.Add(listSection);
                                 renderedAnyBlock = true;
                             }
                             continue;
                         }
 
-                        // Skip generic wrapper containers if they just hold standard paragraphs to prevent double rendering/duplication
-                        if ((tagName == "div" || tagName == "section" || tagName == "article") &&
-                            !(!string.IsNullOrEmpty(className) || !string.IsNullOrEmpty(idName)) &&
-                            (innerHtml.Contains("<p>") || innerHtml.Contains("<h2>") || innerHtml.Contains("<h1>")))
+                        // Handle <form> / search containers
+                        if (tagName == "form" || (tagName == "div" || tagName == "section") && (!string.IsNullOrEmpty(className) || !string.IsNullOrEmpty(idName) || innerHtml.Contains("<input")))
                         {
+                            Dictionary<string, string> divStyles = _cssParser.ResolveStylesForElement(storedCssRules, tagName, className, idName);
+
+                            Section containerSec = new Section();
+                            if (divStyles.TryGetValue("background-color", out string divBg))
+                            {
+                                Brush bgBrush = ConvertCssColor(divBg);
+                                if (bgBrush != null) containerSec.Background = bgBrush;
+                            }
+                            containerSec.Margin = new Thickness(20, 20, 20, 20);
+                            containerSec.Padding = new Thickness(16);
+
+                            MatchCollection inputMatches = Regex.Matches(innerHtml, @"<input(?:\s+([^>]*))?/?>", RegexOptions.Singleline | RegexOptions.IgnoreCase);
+                            foreach (Match inMatch in inputMatches)
+                            {
+                                string inAttrs = inMatch.Groups[1].Value;
+                                string inType = ExtractAttribute(inAttrs, "type").ToLower();
+                                string val = ExtractAttribute(inAttrs, "value");
+
+                                if (string.IsNullOrEmpty(inType) || inType == "text" || inType == "search")
+                                {
+                                    TextBox inputTextBox = new TextBox
+                                    {
+                                        Text = !string.IsNullOrEmpty(val) ? val : string.Empty,
+                                        Width = 350,
+                                        Height = 36,
+                                        VerticalContentAlignment = VerticalAlignment.Center,
+                                        Padding = new Thickness(8, 2, 8, 2),
+                                        Margin = new Thickness(0, 8, 0, 8)
+                                    };
+
+                                    inputTextBox.KeyDown += (s, args) =>
+                                    {
+                                        if (args.Key == Key.Enter && s is TextBox tb)
+                                        {
+                                            string query = tb.Text.Trim();
+                                            if (!string.IsNullOrEmpty(query))
+                                            {
+                                                string searchUrl = $"https://duckduckgo.com/?q={Uri.EscapeDataString(query)}";
+                                                onNavigate?.Invoke(searchUrl);
+                                            }
+                                        }
+                                    };
+
+                                    containerSec.Blocks.Add(new BlockUIContainer(inputTextBox));
+                                }
+                            }
+
+                            ParseContainerContent(innerHtml, containerSec, storedCssRules, onNavigate);
+
+                            if (containerSec.Blocks.Count > 0)
+                            {
+                                rootSection.Blocks.Add(containerSec);
+                                renderedAnyBlock = true;
+                            }
                             continue;
                         }
 
@@ -204,11 +301,46 @@ namespace HomeNet.Parsing
                             }
                         }
                     }
+                    else if (match.Groups[4].Success)
+                    {
+                        string attributes = match.Groups[4].Value;
+                        string inputType = ExtractAttribute(attributes, "type").ToLower();
+                        string inputValue = ExtractAttribute(attributes, "value");
+
+                        if (string.IsNullOrEmpty(inputType) || inputType == "text" || inputType == "search")
+                        {
+                            TextBox inputTextBox = new TextBox
+                            {
+                                Text = !string.IsNullOrEmpty(inputValue) ? inputValue : string.Empty,
+                                Width = 350,
+                                Height = 36,
+                                VerticalContentAlignment = VerticalAlignment.Center,
+                                Padding = new Thickness(8, 2, 8, 2),
+                                Margin = new Thickness(0, 12, 0, 12)
+                            };
+
+                            inputTextBox.KeyDown += (s, args) =>
+                            {
+                                if (args.Key == Key.Enter && s is TextBox tb)
+                                {
+                                    string query = tb.Text.Trim();
+                                    if (!string.IsNullOrEmpty(query))
+                                    {
+                                        string searchUrl = $"https://duckduckgo.com/?q={Uri.EscapeDataString(query)}";
+                                        onNavigate?.Invoke(searchUrl);
+                                    }
+                                }
+                            };
+
+                            rootSection.Blocks.Add(new BlockUIContainer(inputTextBox));
+                            renderedAnyBlock = true;
+                        }
+                    }
                     else
                     {
-                        string imgSrc = match.Groups[4].Success ? match.Groups[4].Value :
-                                       match.Groups[5].Success ? match.Groups[5].Value :
-                                       match.Groups[6].Value;
+                        string imgSrc = match.Groups[5].Success ? match.Groups[5].Value :
+                                       match.Groups[6].Success ? match.Groups[6].Value :
+                                       match.Groups[7].Value;
 
                         if (!string.IsNullOrEmpty(imgSrc))
                         {

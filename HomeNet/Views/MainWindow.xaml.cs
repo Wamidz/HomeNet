@@ -56,11 +56,15 @@ namespace HomeNet.Views
             linkP.FontSize = 14;
             linkP.Margin = new Thickness(20, 0, 0, 0);
 
-            Hyperlink wikiLink = new Hyperlink(new Run("Wikipedia — The Free Encyclopedia\n"));
+            Hyperlink searchLink = new Hyperlink(new Run("DuckDuckGo - Recommended Search Engine\n"));
+            searchLink.Command = new Commands.NavigationCommand("https://duckduckgo.com/?q=", async target => await LoadPageAsync(target));
+            linkP.Inlines.Add(searchLink);
+
+            Hyperlink wikiLink = new Hyperlink(new Run("\nWikipedia — The Free Encyclopedia\n"));
             wikiLink.Command = new Commands.NavigationCommand("https://www.wikipedia.org/", async target => await LoadPageAsync(target));
             linkP.Inlines.Add(wikiLink);
 
-            Hyperlink svendLink = new Hyperlink(new Run("\nSvend's portfolio - Most simple test case\n"));
+            Hyperlink svendLink = new Hyperlink(new Run("\nSvend's portfolio - Most Simple Test Case\n"));
             svendLink.Command = new Commands.NavigationCommand("https://svend233.github.io/", async target => await LoadPageAsync(target));
             linkP.Inlines.Add(svendLink);
 
