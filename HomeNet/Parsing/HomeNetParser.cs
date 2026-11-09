@@ -25,14 +25,15 @@ namespace HomeNet.Parsing
             FetchExternalStylesheetsSafely(htmlContent, basePageUrl, storedCssRules);
 
             string cleanedHtml = Regex.Replace(htmlContent, @"<(style|script|noscript)[^>]*>.*?</\1>", string.Empty, RegexOptions.Singleline | RegexOptions.IgnoreCase);
+            cleanedHtml = Regex.Replace(cleanedHtml, @"<!--.*?-->", string.Empty, RegexOptions.Singleline);
 
             Section rootSection = new Section();
             ApplyBodyStyles(storedCssRules, rootSection, flowDoc);
 
             string processedHtml = Regex.Replace(cleanedHtml, @"\r?\n\s*", " ");
 
-            // Added <ol> to the main tag matching pattern
-            string pattern = @"<(h[1-6]|p|li|button|div|section|header|footer|article|nav|form|ol)(?:\s+([^>]*))?>(.*?)</\1>|<input(?:\s+([^>]*))?/?>|<img[^>]+src\s*=\s*(?:""([^""]*)""|'([^']*)'|([^\s>]+))[^>]*>";
+            // Pattern without standalone <input> match to prevent double-rendering bugs
+            string pattern = @"<(h[1-6]|p|li|button|div|section|header|footer|article|nav|form|ol)(?:\s+([^>]*))?>(.*?)</\1>|<img[^>]+src\s*=\s*(?:""([^""]*)""|'([^']*)'|([^\s>]+))[^>]*>";
             MatchCollection matches = Regex.Matches(processedHtml, pattern, RegexOptions.Singleline | RegexOptions.IgnoreCase);
 
             if (matches.Count == 0)
@@ -44,6 +45,7 @@ namespace HomeNet.Parsing
             else
             {
                 bool renderedAnyBlock = false;
+                bool hasRenderedSearchForm = false; // Declared outside the loop to persist across iterations
 
                 foreach (Match match in matches)
                 {
@@ -69,7 +71,6 @@ namespace HomeNet.Parsing
                             continue;
                         }
 
-                        // Handle <header> specifically
                         if (tagName == "header")
                         {
                             Dictionary<string, string> headerStyles = _cssParser.ResolveStylesForElement(storedCssRules, tagName, className, idName);
@@ -117,7 +118,6 @@ namespace HomeNet.Parsing
                             continue;
                         }
 
-                        // Handle <ol> / <ul> search results lists
                         if (tagName == "ol" || tagName == "ul")
                         {
                             Section listSection = new Section();
@@ -184,10 +184,27 @@ namespace HomeNet.Parsing
                             continue;
                         }
 
-                        // Handle <form> / search containers
-                        if (tagName == "form" || (tagName == "div" || tagName == "section") && (!string.IsNullOrEmpty(className) || !string.IsNullOrEmpty(idName) || innerHtml.Contains("<input")))
+                        if (tagName == "form")
                         {
+                            if (hasRenderedSearchForm)
+                            {
+                                continue;
+                            }
+                            hasRenderedSearchForm = true;
+
                             Dictionary<string, string> divStyles = _cssParser.ResolveStylesForElement(storedCssRules, tagName, className, idName);
+
+                            string formAction = ExtractAttribute(attributes, "action");
+                            string formMethod = ExtractAttribute(attributes, "method").ToLower();
+                            string targetFormUrl = basePageUrl;
+
+                            if (!string.IsNullOrEmpty(formAction))
+                            {
+                                if (Uri.TryCreate(new Uri(basePageUrl), formAction, out Uri resolvedFormUri))
+                                {
+                                    targetFormUrl = resolvedFormUri.GetLeftPart(UriPartial.Path);
+                                }
+                            }
 
                             Section containerSec = new Section();
                             if (divStyles.TryGetValue("background-color", out string divBg))
@@ -198,12 +215,15 @@ namespace HomeNet.Parsing
                             containerSec.Margin = new Thickness(20, 20, 20, 20);
                             containerSec.Padding = new Thickness(16);
 
+                            List<(string Name, TextBox Box)> formInputs = new List<(string, TextBox)>();
+
                             MatchCollection inputMatches = Regex.Matches(innerHtml, @"<input(?:\s+([^>]*))?/?>", RegexOptions.Singleline | RegexOptions.IgnoreCase);
                             foreach (Match inMatch in inputMatches)
                             {
                                 string inAttrs = inMatch.Groups[1].Value;
                                 string inType = ExtractAttribute(inAttrs, "type").ToLower();
                                 string val = ExtractAttribute(inAttrs, "value");
+                                string inputName = ExtractAttribute(inAttrs, "name");
 
                                 if (string.IsNullOrEmpty(inType) || inType == "text" || inType == "search")
                                 {
@@ -217,15 +237,48 @@ namespace HomeNet.Parsing
                                         Margin = new Thickness(0, 8, 0, 8)
                                     };
 
+                                    if (!string.IsNullOrEmpty(inputName))
+                                    {
+                                        formInputs.Add((inputName, inputTextBox));
+                                    }
+
                                     inputTextBox.KeyDown += (s, args) =>
                                     {
-                                        if (args.Key == Key.Enter && s is TextBox tb)
+                                        if (args.Key == Key.Enter)
                                         {
-                                            string query = tb.Text.Trim();
-                                            if (!string.IsNullOrEmpty(query))
+                                            if (!string.IsNullOrEmpty(formAction))
                                             {
-                                                string searchUrl = $"https://duckduckgo.com/?q={Uri.EscapeDataString(query)}";
-                                                onNavigate?.Invoke(searchUrl);
+                                                List<string> queryParams = new List<string>();
+                                                foreach (var input in formInputs)
+                                                {
+                                                    string queryVal = input.Box.Text.Trim();
+                                                    if (!string.IsNullOrEmpty(input.Name))
+                                                    {
+                                                        queryParams.Add($"{Uri.EscapeDataString(input.Name)}={Uri.EscapeDataString(queryVal)}");
+                                                    }
+                                                }
+
+                                                if (queryParams.Count > 0)
+                                                {
+                                                    // Check method attribute: default to GET if omitted or explicitly set to "get"
+                                                    if (string.IsNullOrEmpty(formMethod) || formMethod == "get")
+                                                    {
+                                                        string separator = targetFormUrl.Contains("?") ? "&" : "?";
+                                                        string submitUrl = $"{targetFormUrl}{separator}{string.Join("&", queryParams)}";
+
+                                                        if (Uri.IsWellFormedUriString(submitUrl, UriKind.Absolute))
+                                                        {
+                                                            onNavigate?.Invoke(submitUrl);
+                                                        }
+                                                    }
+                                                    else if (formMethod == "post")
+                                                    {
+                                                        // Placeholder for POST requests until HTTP payload streaming is wired up
+                                                        // For now, prevent corrupting the URL or sending an unhandled GET loop
+                                                        string submitUrl = $"{targetFormUrl}?{string.Join("&", queryParams)}";
+                                                        onNavigate?.Invoke(submitUrl);
+                                                    }
+                                                }
                                             }
                                         }
                                     };
@@ -299,41 +352,6 @@ namespace HomeNet.Parsing
                                 rootSection.Blocks.Add(p);
                                 renderedAnyBlock = true;
                             }
-                        }
-                    }
-                    else if (match.Groups[4].Success)
-                    {
-                        string attributes = match.Groups[4].Value;
-                        string inputType = ExtractAttribute(attributes, "type").ToLower();
-                        string inputValue = ExtractAttribute(attributes, "value");
-
-                        if (string.IsNullOrEmpty(inputType) || inputType == "text" || inputType == "search")
-                        {
-                            TextBox inputTextBox = new TextBox
-                            {
-                                Text = !string.IsNullOrEmpty(inputValue) ? inputValue : string.Empty,
-                                Width = 350,
-                                Height = 36,
-                                VerticalContentAlignment = VerticalAlignment.Center,
-                                Padding = new Thickness(8, 2, 8, 2),
-                                Margin = new Thickness(0, 12, 0, 12)
-                            };
-
-                            inputTextBox.KeyDown += (s, args) =>
-                            {
-                                if (args.Key == Key.Enter && s is TextBox tb)
-                                {
-                                    string query = tb.Text.Trim();
-                                    if (!string.IsNullOrEmpty(query))
-                                    {
-                                        string searchUrl = $"https://duckduckgo.com/?q={Uri.EscapeDataString(query)}";
-                                        onNavigate?.Invoke(searchUrl);
-                                    }
-                                }
-                            };
-
-                            rootSection.Blocks.Add(new BlockUIContainer(inputTextBox));
-                            renderedAnyBlock = true;
                         }
                     }
                     else
@@ -575,7 +593,7 @@ namespace HomeNet.Parsing
             {
                 try
                 {
-                    Match match = Regex.Match(cssColor, @"rgba?\s*\(\s*(\d+),\s*(\d+),\s*(\d+)(?:,\s*[\d\.]+)?\s*\)");
+                    Match match = Regex.Matches(cssColor, @"rgba?\s*\(\s*(\d+),\s*(\d+),\s*(\d+)(?:,\s*[\d\.]+)?\s*\)")[0];
                     if (match.Success)
                     {
                         byte r = byte.Parse(match.Groups[1].Value);

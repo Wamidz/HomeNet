@@ -56,8 +56,8 @@ namespace HomeNet.Views
             linkP.FontSize = 14;
             linkP.Margin = new Thickness(20, 0, 0, 0);
 
-            Hyperlink searchLink = new Hyperlink(new Run("DuckDuckGo - Recommended Search Engine\n"));
-            searchLink.Command = new Commands.NavigationCommand("https://duckduckgo.com/?q=", async target => await LoadPageAsync(target));
+            Hyperlink searchLink = new Hyperlink(new Run("DuckDuckGo Lite - Recommended Search Engine\n"));
+            searchLink.Command = new Commands.NavigationCommand("https://html.duckduckgo.com/lite/", async target => await LoadPageAsync(target));
             linkP.Inlines.Add(searchLink);
 
             Hyperlink wikiLink = new Hyperlink(new Run("\nWikipedia — The Free Encyclopedia\n"));
@@ -127,9 +127,14 @@ namespace HomeNet.Views
                 );
 
                 string rawResponse = await engine.FetchPageAsync(url);
+
+                // Separate HTTP headers from the HTML body so the parser gets clean markup
+                int headerBodySplit = rawResponse.IndexOf("\r\n\r\n", StringComparison.Ordinal);
+                string htmlBody = headerBodySplit >= 0 ? rawResponse.Substring(headerBodySplit + 4) : rawResponse;
+
                 HomeNetParser parser = new HomeNetParser();
 
-                parser.BuildFlowDocumentFromHtml(rawResponse, renderFlowDoc, async clickedUrl =>
+                parser.BuildFlowDocumentFromHtml(htmlBody, renderFlowDoc, async clickedUrl =>
                 {
                     if (string.IsNullOrEmpty(clickedUrl) ||
                         clickedUrl.StartsWith("#") ||
