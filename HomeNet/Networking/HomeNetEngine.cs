@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Net.Security;
@@ -19,7 +20,13 @@ namespace HomeNet.Networking
             _urlCallback = urlCallback;
         }
 
-        public async Task<string> FetchPageAsync(string inputUrl, int redirectCount = 0)
+        private string GetUserAgent()
+        {
+            string version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString(2) ?? "0.1";
+            return $"HomeNet/{version}";
+        }
+
+        public async Task<string> FetchPageAsync(string inputUrl, Dictionary<string, string> postData = null, string method = "GET", int redirectCount = 0)
         {
             if (redirectCount > 5)
             {
@@ -64,10 +71,35 @@ namespace HomeNet.Networking
                     _statusCallback("Port 80 detected. Proceeding with unsecure HTTP connection...");
                 }
 
-                string httpRequest = $"GET {pathAndQuery} HTTP/1.1\r\n" +
-                                     $"Host: {hostname}\r\n" +
-                                     "User-Agent: HomeNet/0.1\r\n" +
-                                     "Connection: close\r\n\r\n";
+                string userAgent = GetUserAgent();
+                string httpRequest;
+
+                if (method.Equals("POST", StringComparison.OrdinalIgnoreCase) && postData != null)
+                {
+                    // Build URL-encoded body payload for POST requests
+                    StringBuilder bodyBuilder = new StringBuilder();
+                    foreach (var kvp in postData)
+                    {
+                        if (bodyBuilder.Length > 0) bodyBuilder.Append("&");
+                        bodyBuilder.Append($"{Uri.EscapeDataString(kvp.Key)}={Uri.EscapeDataString(kvp.Value)}");
+                    }
+                    string bodyContent = bodyBuilder.ToString();
+
+                    httpRequest = $"POST {pathAndQuery} HTTP/1.1\r\n" +
+                                  $"Host: {hostname}\r\n" +
+                                  $"User-Agent: {userAgent}\r\n" +
+                                  "Content-Type: application/x-www-form-urlencoded\r\n" +
+                                  $"Content-Length: {Encoding.UTF8.GetByteCount(bodyContent)}\r\n" +
+                                  "Connection: close\r\n\r\n" +
+                                  bodyContent;
+                }
+                else
+                {
+                    httpRequest = $"GET {pathAndQuery} HTTP/1.1\r\n" +
+                                  $"Host: {hostname}\r\n" +
+                                  $"User-Agent: {userAgent}\r\n" +
+                                  "Connection: close\r\n\r\n";
+                }
 
                 byte[] requestBytes = Encoding.ASCII.GetBytes(httpRequest);
                 await networkStream.WriteAsync(requestBytes, 0, requestBytes.Length);
@@ -107,7 +139,7 @@ namespace HomeNet.Networking
                             _statusCallback($"Redirect detected! Following to: {redirectUrl}...");
                             _urlCallback(redirectUrl);
                             await Task.Delay(1000);
-                            return await FetchPageAsync(redirectUrl, redirectCount + 1);
+                            return await FetchPageAsync(redirectUrl, postData, method, redirectCount + 1);
                         }
                     }
                 }

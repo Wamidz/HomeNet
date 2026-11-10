@@ -92,7 +92,7 @@ namespace HomeNet.Views
             {
                 _historyIndex--;
                 _isNavigatingHistory = true;
-                await LoadPageAsync(_history[_historyIndex], true);
+                await LoadPageAsync(_history[_historyIndex], null, "GET", true);
                 _isNavigatingHistory = false;
                 UpdateNavigationButtons();
             }
@@ -104,13 +104,13 @@ namespace HomeNet.Views
             {
                 _historyIndex++;
                 _isNavigatingHistory = true;
-                await LoadPageAsync(_history[_historyIndex], true);
+                await LoadPageAsync(_history[_historyIndex], null, "GET", true);
                 _isNavigatingHistory = false;
                 UpdateNavigationButtons();
             }
         }
 
-        private async Task LoadPageAsync(string url, bool isHistoryNavigation = false)
+        private async Task LoadPageAsync(string url, Dictionary<string, string> postData = null, string method = "GET", bool isHistoryNavigation = false)
         {
             try
             {
@@ -126,7 +126,7 @@ namespace HomeNet.Views
                     newUrl => searchBar.Text = newUrl
                 );
 
-                string rawResponse = await engine.FetchPageAsync(url);
+                string rawResponse = await engine.FetchPageAsync(url, postData, method);
 
                 // Separate HTTP headers from the HTML body so the parser gets clean markup
                 int headerBodySplit = rawResponse.IndexOf("\r\n\r\n", StringComparison.Ordinal);
@@ -134,7 +134,7 @@ namespace HomeNet.Views
 
                 HomeNetParser parser = new HomeNetParser();
 
-                parser.BuildFlowDocumentFromHtml(htmlBody, renderFlowDoc, async clickedUrl =>
+                parser.BuildFlowDocumentFromHtml(htmlBody, renderFlowDoc, async (clickedUrl, formData, httpMethod) =>
                 {
                     if (string.IsNullOrEmpty(clickedUrl) ||
                         clickedUrl.StartsWith("#") ||
@@ -162,10 +162,10 @@ namespace HomeNet.Views
                         }
                     }
 
-                    await LoadPageAsync(targetUrl);
+                    await LoadPageAsync(targetUrl, formData, httpMethod);
                 }, url);
 
-                if (!isHistoryNavigation)
+                if (!isHistoryNavigation && method.Equals("GET", StringComparison.OrdinalIgnoreCase))
                 {
                     if (_historyIndex < _history.Count - 1)
                     {
