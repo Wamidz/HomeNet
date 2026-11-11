@@ -169,7 +169,6 @@ namespace HomeNet.Parsing
                     }
                 }
 
-                // 2. Capture Zero-Click Info Box (Wikipedia Summary)
                 MatchCollection zeroClickMatch = Regex.Matches(cleanedHtml, @"Zero-click info:.*?<a[^>]+href\s*=\s*(?:""([^""]*)""|'([^']*)'|([^\s>]+))[^>]*>(.*?)</a>.*?</td>\s*</tr>\s*<tr>\s*<td>(.*?)</td>", RegexOptions.Singleline | RegexOptions.IgnoreCase);
                 foreach (Match zc in zeroClickMatch)
                 {
@@ -721,33 +720,68 @@ namespace HomeNet.Parsing
 
         private string ResolveImageUrl(string imgSrc, string basePageUrl)
         {
-            if (string.IsNullOrEmpty(imgSrc)) return string.Empty;
+            if (string.IsNullOrWhiteSpace(imgSrc)) return string.Empty;
+            imgSrc = imgSrc.Trim();
 
+            // 1. Handle protocol-relative URLs (e.g., "//example.com/image.png")
             if (imgSrc.StartsWith("//"))
             {
-                imgSrc = "https:" + imgSrc;
-            }
-            else if (!imgSrc.StartsWith("http://") && !imgSrc.StartsWith("https://") && !string.IsNullOrEmpty(basePageUrl))
-            {
-                try
+                string scheme = "https"; // Default fallback
+                if (Uri.TryCreate(basePageUrl, UriKind.Absolute, out Uri baseUriObj))
                 {
-                    Uri baseUri = new Uri(basePageUrl);
+                    scheme = baseUriObj.Scheme;
+                }
+                imgSrc = scheme + ":" + imgSrc;
+            }
 
-                    // If the path starts with '/', resolve it against the root domain authority
-                    if (imgSrc.StartsWith("/"))
+            // 2. If the image URL is already an absolute URI, validate and return it
+            if (Uri.TryCreate(imgSrc, UriKind.Absolute, out Uri absoluteUri))
+            {
+                return absoluteUri.AbsoluteUri;
+            }
+
+            // 3. Resolve relative URLs against the base page URL
+            if (!string.IsNullOrEmpty(basePageUrl) && Uri.TryCreate(basePageUrl, UriKind.Absolute, out Uri baseUri))
+            {
+                // Separate path from query string or fragment so we don't mangle them
+                string pathPart = imgSrc;
+                string queryAndFragment = string.Empty;
+
+                int queryIndex = imgSrc.IndexOf('?');
+                if (queryIndex >= 0)
+                {
+                    pathPart = imgSrc.Substring(0, queryIndex);
+                    queryAndFragment = imgSrc.Substring(queryIndex);
+                }
+                else
+                {
+                    int fragIndex = imgSrc.IndexOf('#');
+                    if (fragIndex >= 0)
                     {
-                        imgSrc = $"{baseUri.Scheme}://{baseUri.Authority}{imgSrc}";
-                    }
-                    else
-                    {
-                        Uri resolvedUri = new Uri(baseUri, imgSrc);
-                        imgSrc = resolvedUri.AbsoluteUri;
+                        pathPart = imgSrc.Substring(0, fragIndex);
+                        queryAndFragment = imgSrc.Substring(fragIndex);
                     }
                 }
-                catch { }
+
+                // Escape each path segment individually to handle spaces, parentheses, 
+                // and special characters safely while keeping directory separators (/) intact.
+                var pathSegments = pathPart.Split('/');
+                for (int i = 0; i < pathSegments.Length; i++)
+                {
+                    pathSegments[i] = Uri.EscapeDataString(pathSegments[i]);
+                }
+
+                string cleanedPath = string.Join("/", pathSegments);
+                string finalRelativeString = cleanedPath + queryAndFragment;
+
+                // Safely combine base URI with the escaped relative path
+                if (Uri.TryCreate(baseUri, finalRelativeString, out Uri resolvedUri))
+                {
+                    return resolvedUri.AbsoluteUri;
+                }
             }
 
-            return Uri.EscapeUriString(imgSrc);
+            return imgSrc.Replace(" ", "%20");
         }
 
         private void SubmitForm(

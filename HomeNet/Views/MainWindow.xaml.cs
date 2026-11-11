@@ -13,9 +13,16 @@ using System.Windows.Media;
 
 namespace HomeNet.Views
 {
+    public class HistoryEntry
+    {
+        public string Url { get; set; }
+        public string Method { get; set; } = "GET"; // "GET" or "POST"
+        public Dictionary<string, string> PostData { get; set; } // Stores form data for POST history
+    }
+
     public partial class MainWindow : Window
     {
-        private readonly List<string> _history = new List<string>();
+        private readonly List<HistoryEntry> _history = new List<HistoryEntry>();
         private int _historyIndex = -1;
         private bool _isNavigatingHistory = false;
         private ScrollViewer _cachedScrollViewer = null;
@@ -92,7 +99,8 @@ namespace HomeNet.Views
             {
                 _historyIndex--;
                 _isNavigatingHistory = true;
-                await LoadPageAsync(_history[_historyIndex], null, "GET", true);
+                HistoryEntry entry = _history[_historyIndex];
+                await LoadPageAsync(entry.Url, entry.PostData, entry.Method, true);
                 _isNavigatingHistory = false;
                 UpdateNavigationButtons();
             }
@@ -104,7 +112,8 @@ namespace HomeNet.Views
             {
                 _historyIndex++;
                 _isNavigatingHistory = true;
-                await LoadPageAsync(_history[_historyIndex], null, "GET", true);
+                HistoryEntry entry = _history[_historyIndex];
+                await LoadPageAsync(entry.Url, entry.PostData, entry.Method, true);
                 _isNavigatingHistory = false;
                 UpdateNavigationButtons();
             }
@@ -165,14 +174,19 @@ namespace HomeNet.Views
                     await LoadPageAsync(targetUrl, formData, httpMethod);
                 }, url);
 
-                if (!isHistoryNavigation && method.Equals("GET", StringComparison.OrdinalIgnoreCase))
+                if (!isHistoryNavigation)
                 {
-                    if (_historyIndex < _history.Count - 1)
+                    if (_historyIndex < _history.Count - 1 && _historyIndex >= 0)
                     {
                         _history.RemoveRange(_historyIndex + 1, _history.Count - (_historyIndex + 1));
                     }
 
-                    _history.Add(url);
+                    _history.Add(new HistoryEntry
+                    {
+                        Url = url,
+                        Method = method,
+                        PostData = postData
+                    });
                     _historyIndex = _history.Count - 1;
                 }
 

@@ -13,17 +13,45 @@ namespace HomeNet.Networking
     {
         private readonly Action<string> _statusCallback;
         private readonly Action<string> _urlCallback;
+        private readonly Action<string> _htmlCallback;
 
-        public HomeNetEngine(Action<string> statusCallback, Action<string> urlCallback)
+        public HomeNetEngine(Action<string> statusCallback = null, Action<string> urlCallback = null, Action<string> htmlCallback = null)
         {
-            _statusCallback = statusCallback;
-            _urlCallback = urlCallback;
+            _statusCallback = statusCallback ?? (_ => { });
+            _urlCallback = urlCallback ?? (_ => { });
+            _htmlCallback = htmlCallback ?? (_ => { });
         }
 
         private string GetUserAgent()
         {
             string version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString(2) ?? "0.1";
             return $"HomeNet/{version}";
+        }
+
+        public async void LoadUrl(string url)
+        {
+            try
+            {
+                string html = await FetchPageAsync(url, null, "GET");
+                _htmlCallback(html);
+            }
+            catch (Exception ex)
+            {
+                _statusCallback($"Error: {ex.Message}");
+            }
+        }
+
+        public async void LoadUrlWithPost(string url, Dictionary<string, string> postData)
+        {
+            try
+            {
+                string html = await FetchPageAsync(url, postData, "POST");
+                _htmlCallback(html);
+            }
+            catch (Exception ex)
+            {
+                _statusCallback($"Error: {ex.Message}");
+            }
         }
 
         public async Task<string> FetchPageAsync(string inputUrl, Dictionary<string, string> postData = null, string method = "GET", int redirectCount = 0)
