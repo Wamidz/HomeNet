@@ -82,15 +82,55 @@ namespace HomeNet.Views
 
         private async void searchButton_Click(object sender, RoutedEventArgs e)
         {
-            await LoadPageAsync(searchBar.Text.Trim());
+            await ProcessOmniboxInputAsync(searchBar.Text);
         }
 
         private async void searchBar_KeyDown(object sender, KeyEventArgs e)
         {
             if (e.Key == Key.Enter)
             {
-                await LoadPageAsync(searchBar.Text.Trim());
+                await ProcessOmniboxInputAsync(searchBar.Text);
             }
+        }
+
+        private async Task ProcessOmniboxInputAsync(string input)
+        {
+            input = input.Trim();
+            if (string.IsNullOrEmpty(input)) return;
+
+            string targetUrl = string.Empty;
+            string method = "GET";
+            Dictionary<string, string> postData = null;
+
+            // TODO: Local file viewing
+            /*
+            if (input.StartsWith("file://", StringComparison.OrdinalIgnoreCase))
+            {
+                targetUrl = input;
+            }
+            else 
+            */
+
+            if (input.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+                input.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            {
+                targetUrl = input;
+            }
+            else if (input.Contains(".") && !input.Contains(" ") && !input.EndsWith("."))
+            {
+                targetUrl = "https://" + input;
+            }
+            else
+            {
+                targetUrl = "https://html.duckduckgo.com/lite/";
+                method = "POST";
+                postData = new Dictionary<string, string>
+                {
+                    { "q", input }
+                };
+            }
+
+            await LoadPageAsync(targetUrl, postData, method);
         }
 
         private async void backButton_Click(object sender, RoutedEventArgs e)
