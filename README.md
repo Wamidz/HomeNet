@@ -12,8 +12,8 @@ Here is the master plan for bringing HomeNet to life, step by step:
 
 * [x] **URL to IP Resolution:** Translating web addresses into raw IP addresses via DNS lookups.
 * [X] **HTTP Packet Fetching:** Writing the networking logic to establish connections and pull raw HTML packets from servers.
-* [x] **HTML Renderer:** Parsing markup text and turning it into actual visual UI elements inside the application.
-* [x] **CSS Renderer:** Adding styling support so websites don't look like an unformatted text document.
+* [x] **HTML Renderer:** Parsing markup text and turning it into actual visual UI elements inside the application. **(Working on it)**
+* [x] **CSS Renderer:** Adding styling support so websites don't look like an unformatted text document. **(Working on it)**
 * [ ] **JavaScript Interpreter:** Integrating an external engine (or attempting to write a custom one and descending straight into madness).
 
 ---
