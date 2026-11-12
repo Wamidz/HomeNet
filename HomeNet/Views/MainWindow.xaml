@@ -1,83 +1,171 @@
 ﻿<Window x:Class="HomeNet.Views.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:local="clr-namespace:HomeNet.Views"
-        mc:Ignorable="d"
-        Title="MainWindow" Height="450" Width="800">
-    <Grid>
-        <DockPanel>
+        Title="HomeNet" Height="680" Width="1000"
+        WindowStyle="None"
+        AllowsTransparency="False"
+        WindowStartupLocation="CenterScreen">
+    <Grid Background="White">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <!-- Row 0: Tabs & Window Controls -->
+            <RowDefinition Height="40"/>
+            <!-- Row 1: Classic Navigation Bar -->
+            <RowDefinition Height="*"/>
+            <!-- Row 2: Active Web Page Content Area -->
+        </Grid.RowDefinitions>
 
-            <Grid DockPanel.Dock="Top" Height="40" Background="Gray">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
+        <!-- ================================================= -->
+        <!-- ROW 0: Tabs & Window Controls                     -->
+        <!-- ================================================= -->
+        <DockPanel Grid.Row="0" Background="#9E9E9E" LastChildFill="True" MouseLeftButtonDown="TopBar_MouseLeftButtonDown">
 
-                <Button x:Name="backButton" 
-                        Grid.Column="0" 
-                        Content="&lt;" 
-                        Height="25" 
-                        Width="30" 
-                        Margin="10,0,5,0" 
-                        VerticalAlignment="Center" 
-                        IsEnabled="False"
-                        Click="backButton_Click" />
+            <!-- Window Minimize, Maximize, Close Buttons on the Far Right -->
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="5,0">
+                <Button Content=" 🗕 " Click="MinimizeWindow_Click" Width="30" Height="25" Cursor="Hand"/>
+                <Button Content=" 🗖 " Click="MaximizeWindow_Click" Width="30" Height="25" Cursor="Hand"/>
+                <Button Content=" ✕ " Click="CloseWindow_Click" Width="30" Height="25" Cursor="Hand"/>
+            </StackPanel>
 
-                <Button x:Name="homeButton" 
-                        Grid.Column="1" 
-                        Content="⌂" 
-                        Height="24" 
-                        Width="30" 
-                        Margin="0,0,5,8" 
-                        VerticalAlignment="Bottom" 
-                        Click="homeButton_Click" />
+            <!-- Tab Headers Strip with Embedded Tab-Style (+) Button -->
+            <TabControl x:Name="browserTabControl" 
+                        SelectionChanged="browserTabControl_SelectionChanged" 
+                        BorderThickness="0" 
+                        Background="Transparent">
+                <TabControl.Template>
+                    <ControlTemplate TargetType="TabControl">
+                        <Grid>
+                            <StackPanel Orientation="Horizontal">
+                                <!-- The actual tabs container -->
+                                <TabPanel IsItemsHost="True" Background="Transparent"/>
 
-                <Button x:Name="forwardButton" 
-                        Grid.Column="2" 
-                        Content="&gt;" 
-                        Height="25" 
-                        Width="30" 
-                        Margin="0,0,10,0" 
-                        VerticalAlignment="Center" 
-                        IsEnabled="False"
-                        Click="forwardButton_Click" />
+                                <!-- The (+) button styled like a tab sitting right next to them -->
+                                <Button x:Name="newTabButton" Content="+" Click="newTabButton_Click" 
+                                        Width="32" Margin="4,4,0,0" 
+                                        Foreground="#333333" BorderThickness="0" Cursor="Hand"
+                                        ToolTip="Open New Tab">
+                                    <Button.Template>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border Name="ButtonBorder" Background="#D8D8D8" CornerRadius="6,6,0,0" Padding="8,4">
+                                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="ButtonBorder" Property="Background" Value="#C8C8C8"/>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Button.Template>
+                                </Button>
+                            </StackPanel>
+                        </Grid>
+                    </ControlTemplate>
+                </TabControl.Template>
 
-                <TextBox x:Name="searchBar" 
-                         Grid.Column="3" 
-                         Height="25" 
-                         Margin="0,0,10,0" 
-                         VerticalAlignment="Center" 
-                         KeyDown="searchBar_KeyDown" />
-
-                <ProgressBar x:Name="loadingProgressBar"
-                             Grid.Column="4"
-                             Width="80" Height="15"
-                             Margin="0,0,10,0"
-                             IsIndeterminate="True"
-                             Visibility="Collapsed"
-                             VerticalAlignment="Center" />
-
-                <Button x:Name="searchButton" 
-                        Grid.Column="5" 
-                        Content="Search" 
-                        Height="25" 
-                        Width="60" 
-                        Margin="0,0,10,0" 
-                        VerticalAlignment="Center" 
-                        Click="searchButton_Click" />
-            </Grid>
-
-            <FlowDocumentScrollViewer x:Name="documentViewer" 
-                         Margin="0" 
-                         PreviewMouseWheel="documentViewer_PreviewMouseWheel">
-                <FlowDocument x:Name="renderFlowDoc" />
-            </FlowDocumentScrollViewer>
+                <TabControl.Resources>
+                    <Style TargetType="TabItem">
+                        <Setter Property="Header" Value="{Binding Title}" />
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="TabItem">
+                                    <Border Name="Border" Background="{TemplateBinding Background}" Padding="10,6" Margin="4,4,0,0" CornerRadius="6,6,0,0">
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <ContentPresenter ContentSource="Header" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                            <Button Content="✕" Width="16" Height="16" FontSize="10" Padding="0" 
+                                                    Background="Transparent" BorderThickness="0" Cursor="Hand"
+                                                    Click="TabCloseButton_Click" ToolTip="Close Tab"/>
+                                        </StackPanel>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsSelected" Value="True">
+                                            <Setter TargetName="Border" Property="Background" Value="White"/>
+                                            <Setter Property="Foreground" Value="Black"/>
+                                        </Trigger>
+                                        <Trigger Property="IsSelected" Value="False">
+                                            <Setter TargetName="Border" Property="Background" Value="Gray"/>
+                                            <Setter Property="Foreground" Value="Black"/>
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </TabControl.Resources>
+            </TabControl>
         </DockPanel>
+        
+        <!-- ================================================= -->
+        <!-- ROW 1: Classic Navigation Bar (Gray)              -->
+        <!-- ================================================= -->
+        <Grid Grid.Row="1" Background="Gray">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <Button x:Name="backButton" 
+                    Grid.Column="0" 
+                    Content="&lt;" 
+                    Height="25" 
+                    Width="30" 
+                    Margin="10,0,5,0" 
+                    VerticalAlignment="Center" 
+                    IsEnabled="False"
+                    Click="backButton_Click" />
+
+            <Button x:Name="homeButton" 
+                    Grid.Column="1" 
+                    Content="⌂" 
+                    Height="24" 
+                    Width="30" 
+                    Margin="0,0,5,8" 
+                    VerticalAlignment="Bottom" 
+                    Click="homeButton_Click" />
+
+            <Button x:Name="forwardButton" 
+                    Grid.Column="2" 
+                    Content="&gt;" 
+                    Height="25" 
+                    Width="30" 
+                    Margin="0,0,10,0" 
+                    VerticalAlignment="Center" 
+                    IsEnabled="False"
+                    Click="forwardButton_Click" />
+
+            <TextBox x:Name="searchBar" 
+                     Grid.Column="3" 
+                     Height="25" 
+                     Margin="0,0,10,0" 
+                     VerticalAlignment="Center" 
+                     KeyDown="searchBar_KeyDown" />
+
+            <ProgressBar x:Name="loadingProgressBar"
+                         Grid.Column="4"
+                         Width="80" Height="15"
+                         Margin="0,0,10,0"
+                         IsIndeterminate="True"
+                         Visibility="Collapsed"
+                         VerticalAlignment="Center" />
+
+            <Button x:Name="searchButton" 
+                    Grid.Column="5" 
+                    Content="Search" 
+                    Height="25" 
+                    Width="60" 
+                    Margin="0,0,10,0" 
+                    VerticalAlignment="Center" 
+                    Click="searchButton_Click" />
+        </Grid>
+
+        <!-- ================================================= -->
+        <!-- ROW 2: Active Tab Content Rendering Space         -->
+        <!-- ================================================= -->
+        <Border Grid.Row="2" Background="White" BorderBrush="#CCCCCC" BorderThickness="0,1,0,0">
+            <ContentPresenter Content="{Binding SelectedItem.Content, ElementName=browserTabControl}" />
+        </Border>
     </Grid>
 </Window>

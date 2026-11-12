@@ -2,7 +2,6 @@
 using HomeNet.Parsing;
 using System;
 using System.Collections.Generic;
-using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
@@ -13,18 +12,8 @@ using System.Windows.Media;
 
 namespace HomeNet.Views
 {
-    public class HistoryEntry
-    {
-        public string Url { get; set; }
-        public string Method { get; set; } = "GET"; // "GET" or "POST"
-        public Dictionary<string, string> PostData { get; set; } // Stores form data for POST history
-    }
-
     public partial class MainWindow : Window
     {
-        private readonly List<HistoryEntry> _history = new List<HistoryEntry>();
-        private int _historyIndex = -1;
-        private bool _isNavigatingHistory = false;
         private ScrollViewer _cachedScrollViewer = null;
 
         public MainWindow()
@@ -33,31 +22,186 @@ namespace HomeNet.Views
             Loaded += MainWindow_Loaded;
         }
 
-        private void MainWindow_Loaded(object sender, RoutedEventArgs e)
+        private BrowserTabState ActiveTab
         {
-            LoadHomeMenu();
+            get
+            {
+                if (browserTabControl?.SelectedItem is TabItem selectedItem)
+                {
+                    return selectedItem.Tag as BrowserTabState;
+                }
+                return null;
+            }
         }
 
-        private void LoadHomeMenu()
+        private FlowDocumentScrollViewer ActiveViewer
         {
-            renderFlowDoc.Blocks.Clear();
+            get
+            {
+                if (browserTabControl?.SelectedItem is TabItem selectedItem)
+                {
+                    return selectedItem.Content as FlowDocumentScrollViewer;
+                }
+                return null;
+            }
+        }
 
-            // Explicitly reset to clean light theme defaults for the home menu
-            renderFlowDoc.Background = Brushes.White;
-            renderFlowDoc.Foreground = Brushes.Black;
+        private void MainWindow_Loaded(object sender, RoutedEventArgs e)
+        {
+            if (browserTabControl.Items.Count == 0)
+            {
+                CreateNewTabWithHomeMenu();
+            }
+        }
+
+        private void newTabButton_Click(object sender, RoutedEventArgs e)
+        {
+            CreateNewTabWithHomeMenu();
+        }
+
+        private void TabCloseButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button button)
+            {
+                DependencyObject curr = button;
+                while (curr != null && !(curr is TabItem))
+                {
+                    curr = VisualTreeHelper.GetParent(curr);
+                }
+
+                if (curr is TabItem tabItem)
+                {
+                    CloseTab(tabItem);
+                }
+            }
+        }
+
+        private void CloseTab(TabItem tabItem)
+        {
+            int index = browserTabControl.Items.IndexOf(tabItem);
+            if (index != -1)
+            {
+                browserTabControl.Items.Remove(tabItem);
+
+                if (browserTabControl.Items.Count == 0)
+                {
+                    CreateNewTabWithHomeMenu();
+                }
+            }
+        }
+
+        private void UpdateCurrentTabContent(string htmlContent, string url, BrowserTabState targetTab = null)
+        {
+            var tab = targetTab ?? ActiveTab;
+            if (tab == null) return;
+
+            string pageTitle = ExtractHtmlTitle(htmlContent);
+            if (string.IsNullOrWhiteSpace(pageTitle) || pageTitle.Contains("System.Windows"))
+            {
+                pageTitle = Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri.Host : "Webpage";
+            }
+
+            tab.Title = pageTitle;
+            tab.CurrentUrl = url;
+
+            if (browserTabControl.SelectedItem is TabItem selectedTabItem && selectedTabItem.Tag == tab)
+            {
+                selectedTabItem.Header = pageTitle.Length > 20 ? pageTitle.Substring(0, 17) + "..." : pageTitle;
+            }
+        }
+
+        private string ExtractHtmlTitle(string html)
+        {
+            try
+            {
+                int startIndex = html.IndexOf("<title>", StringComparison.OrdinalIgnoreCase);
+                if (startIndex != -1)
+                {
+                    startIndex += 7;
+                    int endIndex = html.IndexOf("</title>", startIndex, StringComparison.OrdinalIgnoreCase);
+                    if (endIndex != -1)
+                    {
+                        string title = html.Substring(startIndex, endIndex - startIndex).Trim();
+                        if (!string.IsNullOrEmpty(title) && !title.Contains("System.Windows"))
+                        {
+                            return title;
+                        }
+                    }
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        private TabItem CreateNewTabWithHomeMenu()
+        {
+            var tabState = new BrowserTabState
+            {
+                Title = "Home"
+            };
+
+            var tabItem = new TabItem
+            {
+                Header = "Home",
+                Tag = tabState
+            };
+
+            var viewer = new FlowDocumentScrollViewer
+            {
+                Document = tabState.Document
+            };
+            viewer.PreviewMouseWheel += documentViewer_PreviewMouseWheel;
+
+            tabItem.Content = viewer;
+            browserTabControl.Items.Add(tabItem);
+            browserTabControl.SelectedItem = tabItem;
+
+            LoadHomeMenuIntoTab(tabState);
+            return tabItem;
+        }
+
+        private void TopBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (e.ButtonState == MouseButtonState.Pressed)
+            {
+                this.DragMove();
+            }
+        }
+
+        private void MinimizeWindow_Click(object sender, RoutedEventArgs e)
+        {
+            this.WindowState = WindowState.Minimized;
+        }
+
+        private void MaximizeWindow_Click(object sender, RoutedEventArgs e)
+        {
+            this.WindowState = this.WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+        }
+
+        private void CloseWindow_Click(object sender, RoutedEventArgs e)
+        {
+            this.Close();
+        }
+
+        private void LoadHomeMenuIntoTab(BrowserTabState tabState)
+        {
+            tabState.Document.Blocks.Clear();
+            tabState.Document.Background = Brushes.White;
+            tabState.Document.Foreground = Brushes.Black;
+            tabState.Title = "Home";
 
             Paragraph welcomeP = new Paragraph();
             welcomeP.FontSize = 20;
             welcomeP.FontWeight = FontWeights.Bold;
             welcomeP.Margin = new Thickness(0, 20, 0, 10);
             welcomeP.Inlines.Add(new Run("Welcome to HomeNet"));
-            renderFlowDoc.Blocks.Add(welcomeP);
+            tabState.Document.Blocks.Add(welcomeP);
 
             Paragraph descP = new Paragraph();
             descP.FontSize = 14;
             descP.Margin = new Thickness(0, 0, 0, 20);
             descP.Inlines.Add(new Run("Your custom C# and WPF web browser. Quick links:"));
-            renderFlowDoc.Blocks.Add(descP);
+            tabState.Document.Blocks.Add(descP);
 
             Paragraph linkP = new Paragraph();
             linkP.FontSize = 14;
@@ -75,9 +219,18 @@ namespace HomeNet.Views
             svendLink.Command = new Commands.NavigationCommand("https://svend233.github.io/", async target => await LoadPageAsync(target));
             linkP.Inlines.Add(svendLink);
 
-            renderFlowDoc.Blocks.Add(linkP);
+            tabState.Document.Blocks.Add(linkP);
+            tabState.CurrentUrl = string.Empty;
             searchBar.Text = string.Empty;
-            Title = "MainWindow";
+        }
+
+        private void browserTabControl_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (ActiveTab != null)
+            {
+                searchBar.Text = ActiveTab.CurrentUrl ?? string.Empty;
+                UpdateNavigationButtons();
+            }
         }
 
         private async void searchButton_Click(object sender, RoutedEventArgs e)
@@ -101,15 +254,6 @@ namespace HomeNet.Views
             string targetUrl = string.Empty;
             string method = "GET";
             Dictionary<string, string> postData = null;
-
-            // TODO: Local file viewing
-            /*
-            if (input.StartsWith("file://", StringComparison.OrdinalIgnoreCase))
-            {
-                targetUrl = input;
-            }
-            else 
-            */
 
             if (input.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
                 input.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
@@ -135,32 +279,35 @@ namespace HomeNet.Views
 
         private async void backButton_Click(object sender, RoutedEventArgs e)
         {
-            if (_historyIndex > 0)
+            var tab = ActiveTab;
+            if (tab != null && tab.HistoryIndex > 0)
             {
-                _historyIndex--;
-                _isNavigatingHistory = true;
-                HistoryEntry entry = _history[_historyIndex];
-                await LoadPageAsync(entry.Url, entry.PostData, entry.Method, true);
-                _isNavigatingHistory = false;
-                UpdateNavigationButtons();
+                tab.HistoryIndex--;
+                HistoryEntry entry = tab.History[tab.HistoryIndex];
+                await LoadPageAsync(entry.Url, entry.PostData, entry.Method, true, tab);
             }
         }
 
         private async void forwardButton_Click(object sender, RoutedEventArgs e)
         {
-            if (_historyIndex < _history.Count - 1)
+            var tab = ActiveTab;
+            if (tab != null && tab.HistoryIndex < tab.History.Count - 1)
             {
-                _historyIndex++;
-                _isNavigatingHistory = true;
-                HistoryEntry entry = _history[_historyIndex];
-                await LoadPageAsync(entry.Url, entry.PostData, entry.Method, true);
-                _isNavigatingHistory = false;
-                UpdateNavigationButtons();
+                tab.HistoryIndex++;
+                HistoryEntry entry = tab.History[tab.HistoryIndex];
+                await LoadPageAsync(entry.Url, entry.PostData, entry.Method, true, tab);
             }
         }
 
-        private async Task LoadPageAsync(string url, Dictionary<string, string> postData = null, string method = "GET", bool isHistoryNavigation = false)
+        private async Task LoadPageAsync(string url, Dictionary<string, string> postData = null, string method = "GET", bool isHistoryNavigation = false, BrowserTabState targetTab = null)
         {
+            var tab = targetTab ?? ActiveTab;
+            if (tab == null)
+            {
+                var newTab = CreateNewTabWithHomeMenu();
+                tab = newTab.Tag as BrowserTabState;
+            }
+
             try
             {
                 InvalidateScrollViewerCache();
@@ -169,21 +316,24 @@ namespace HomeNet.Views
                 searchBar.IsEnabled = false;
                 loadingProgressBar.Visibility = Visibility.Visible;
                 searchBar.Text = url;
+                tab.CurrentUrl = url;
 
                 HomeNetEngine engine = new HomeNetEngine(
                     statusMessage => renderFieldStatus(statusMessage),
-                    newUrl => searchBar.Text = newUrl
+                    newUrl => {
+                        searchBar.Text = newUrl;
+                        tab.CurrentUrl = newUrl;
+                    }
                 );
 
                 string rawResponse = await engine.FetchPageAsync(url, postData, method);
 
-                // Separate HTTP headers from the HTML body so the parser gets clean markup
                 int headerBodySplit = rawResponse.IndexOf("\r\n\r\n", StringComparison.Ordinal);
                 string htmlBody = headerBodySplit >= 0 ? rawResponse.Substring(headerBodySplit + 4) : rawResponse;
 
                 HomeNetParser parser = new HomeNetParser();
 
-                parser.BuildFlowDocumentFromHtml(htmlBody, renderFlowDoc, async (clickedUrl, formData, httpMethod) =>
+                parser.BuildFlowDocumentFromHtml(htmlBody, tab.Document, async (clickedUrl, formData, httpMethod) =>
                 {
                     if (string.IsNullOrEmpty(clickedUrl) ||
                         clickedUrl.StartsWith("#") ||
@@ -211,33 +361,33 @@ namespace HomeNet.Views
                         }
                     }
 
-                    await LoadPageAsync(targetUrl, formData, httpMethod);
+                    await LoadPageAsync(targetUrl, formData, httpMethod, false, tab);
                 }, url);
+
+                UpdateCurrentTabContent(htmlBody, url, tab);
 
                 if (!isHistoryNavigation)
                 {
-                    if (_historyIndex < _history.Count - 1 && _historyIndex >= 0)
+                    if (tab.HistoryIndex < tab.History.Count - 1 && tab.HistoryIndex >= 0)
                     {
-                        _history.RemoveRange(_historyIndex + 1, _history.Count - (_historyIndex + 1));
+                        tab.History.RemoveRange(tab.HistoryIndex + 1, tab.History.Count - (tab.HistoryIndex + 1));
                     }
 
-                    _history.Add(new HistoryEntry
+                    tab.History.Add(new HistoryEntry
                     {
                         Url = url,
                         Method = method,
                         PostData = postData
                     });
-                    _historyIndex = _history.Count - 1;
+                    tab.HistoryIndex = tab.History.Count - 1;
                 }
 
                 UpdateNavigationButtons();
-                Title = "HomeNet - Done!";
             }
             catch (Exception ex)
             {
-                renderFlowDoc.Blocks.Clear();
-                renderFlowDoc.Blocks.Add(new Paragraph(new Run($"Network Error: {ex.Message}")));
-                Title = "HomeNet - Error";
+                tab.Document.Blocks.Clear();
+                tab.Document.Blocks.Add(new Paragraph(new Run($"Network Error: {ex.Message}")));
             }
             finally
             {
@@ -249,21 +399,25 @@ namespace HomeNet.Views
 
         private void documentViewer_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
         {
-            if (_cachedScrollViewer == null)
+            var viewer = ActiveViewer;
+            if (viewer != null)
             {
-                _cachedScrollViewer = GetVisualChild<ScrollViewer>(documentViewer);
-            }
+                if (_cachedScrollViewer == null)
+                {
+                    _cachedScrollViewer = GetVisualChild<ScrollViewer>(viewer);
+                }
 
-            if (_cachedScrollViewer != null)
-            {
-                double scrollSpeedMultiplier = 1.5;
-                double newOffset = _cachedScrollViewer.VerticalOffset - (e.Delta * scrollSpeedMultiplier);
+                if (_cachedScrollViewer != null)
+                {
+                    double scrollSpeedMultiplier = 1.5;
+                    double newOffset = _cachedScrollViewer.VerticalOffset - (e.Delta * scrollSpeedMultiplier);
 
-                if (newOffset < 0) newOffset = 0;
-                if (newOffset > _cachedScrollViewer.ScrollableHeight) newOffset = _cachedScrollViewer.ScrollableHeight;
+                    if (newOffset < 0) newOffset = 0;
+                    if (newOffset > _cachedScrollViewer.ScrollableHeight) newOffset = _cachedScrollViewer.ScrollableHeight;
 
-                _cachedScrollViewer.ScrollToVerticalOffset(newOffset);
-                e.Handled = true;
+                    _cachedScrollViewer.ScrollToVerticalOffset(newOffset);
+                    e.Handled = true;
+                }
             }
         }
 
@@ -292,18 +446,34 @@ namespace HomeNet.Views
 
         private void UpdateNavigationButtons()
         {
-            backButton.IsEnabled = _historyIndex > 0;
-            forwardButton.IsEnabled = _historyIndex < _history.Count - 1;
+            var tab = ActiveTab;
+            if (tab != null)
+            {
+                backButton.IsEnabled = tab.HistoryIndex > 0;
+                forwardButton.IsEnabled = tab.HistoryIndex < tab.History.Count - 1;
+            }
+            else
+            {
+                backButton.IsEnabled = false;
+                forwardButton.IsEnabled = false;
+            }
         }
 
         private void renderFieldStatus(string status)
         {
-            Title = $"HomeNet - {status}";
+            // Status bar removed; can be used for logging or left silent.
         }
 
         private void homeButton_Click(object sender, RoutedEventArgs e)
         {
-            LoadHomeMenu();
+            if (ActiveTab != null)
+            {
+                LoadHomeMenuIntoTab(ActiveTab);
+                if (browserTabControl.SelectedItem is TabItem selectedTabItem)
+                {
+                    selectedTabItem.Header = "Home";
+                }
+            }
         }
     }
 }
