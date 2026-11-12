@@ -81,8 +81,20 @@ namespace HomeNet.Views
             int index = browserTabControl.Items.IndexOf(tabItem);
             if (index != -1)
             {
+                // 1. Invalidate scroll viewer cache so GC can collect the closed tab
+                InvalidateScrollViewerCache();
+
+                // 2. Clear viewer document and tags to sever references
+                if (tabItem.Content is FlowDocumentScrollViewer viewer)
+                {
+                    viewer.Document = null;
+                }
+                tabItem.Tag = null;
+                tabItem.Content = null;
+
                 browserTabControl.Items.Remove(tabItem);
 
+                // 3. Fallback to a new home tab if all tabs are closed
                 if (browserTabControl.Items.Count == 0)
                 {
                     CreateNewTabWithHomeMenu();
@@ -226,6 +238,34 @@ namespace HomeNet.Views
 
         private void browserTabControl_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
+            // TAB HIBERNATION & RAM CONSERVATION:
+            // Unload document rendering trees for inactive tabs, restore active tab.
+            foreach (var item in browserTabControl.Items)
+            {
+                if (item is TabItem tabItem && tabItem.Tag is BrowserTabState tabState)
+                {
+                    if (tabItem.Content is FlowDocumentScrollViewer viewer)
+                    {
+                        if (tabItem == browserTabControl.SelectedItem)
+                        {
+                            // Wake up active tab: re-attach document if it was hibernated
+                            if (viewer.Document == null)
+                            {
+                                viewer.Document = tabState.Document;
+                            }
+                        }
+                        else
+                        {
+                            // Hibernate inactive tab: detach document to free visual tree RAM
+                            viewer.Document = null;
+                        }
+                    }
+                }
+            }
+
+            // Invalidate scroll cache for the newly active viewer
+            InvalidateScrollViewerCache();
+
             if (ActiveTab != null)
             {
                 searchBar.Text = ActiveTab.CurrentUrl ?? string.Empty;
