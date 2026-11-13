@@ -14,6 +14,7 @@ namespace HomeNet.Views
     public class BrowserTabState : INotifyPropertyChanged
     {
         private string _title = "New Tab";
+        public CancellationTokenSource Cts { get; set; } = new CancellationTokenSource();
         public string Title
         {
             get => _title;

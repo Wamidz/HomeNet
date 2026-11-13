@@ -81,10 +81,14 @@ namespace HomeNet.Views
             int index = browserTabControl.Items.IndexOf(tabItem);
             if (index != -1)
             {
-                // 1. Invalidate scroll viewer cache so GC can collect the closed tab
+                if (tabItem.Tag is BrowserTabState tabState)
+                {
+                    tabState.Cts?.Cancel(); // Cancel any background HTTP requests
+                    tabState.Cts?.Dispose();
+                }
+
                 InvalidateScrollViewerCache();
 
-                // 2. Clear viewer document and tags to sever references
                 if (tabItem.Content is FlowDocumentScrollViewer viewer)
                 {
                     viewer.Document = null;
@@ -94,7 +98,6 @@ namespace HomeNet.Views
 
                 browserTabControl.Items.Remove(tabItem);
 
-                // 3. Fallback to a new home tab if all tabs are closed
                 if (browserTabControl.Items.Count == 0)
                 {
                     CreateNewTabWithHomeMenu();
@@ -238,8 +241,6 @@ namespace HomeNet.Views
 
         private void browserTabControl_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            // TAB HIBERNATION & RAM CONSERVATION:
-            // Unload document rendering trees for inactive tabs, restore active tab.
             foreach (var item in browserTabControl.Items)
             {
                 if (item is TabItem tabItem && tabItem.Tag is BrowserTabState tabState)
@@ -248,7 +249,6 @@ namespace HomeNet.Views
                     {
                         if (tabItem == browserTabControl.SelectedItem)
                         {
-                            // Wake up active tab: re-attach document if it was hibernated
                             if (viewer.Document == null)
                             {
                                 viewer.Document = tabState.Document;
@@ -256,14 +256,12 @@ namespace HomeNet.Views
                         }
                         else
                         {
-                            // Hibernate inactive tab: detach document to free visual tree RAM
                             viewer.Document = null;
                         }
                     }
                 }
             }
 
-            // Invalidate scroll cache for the newly active viewer
             InvalidateScrollViewerCache();
 
             if (ActiveTab != null)
@@ -348,6 +346,11 @@ namespace HomeNet.Views
                 tab = newTab.Tag as BrowserTabState;
             }
 
+            tab.Cts?.Cancel();
+            tab.Cts?.Dispose();
+            tab.Cts = new CancellationTokenSource();
+            var cancellationToken = tab.Cts.Token;
+
             try
             {
                 InvalidateScrollViewerCache();
@@ -367,6 +370,8 @@ namespace HomeNet.Views
                 );
 
                 string rawResponse = await engine.FetchPageAsync(url, postData, method);
+
+                cancellationToken.ThrowIfCancellationRequested();
 
                 int headerBodySplit = rawResponse.IndexOf("\r\n\r\n", StringComparison.Ordinal);
                 string htmlBody = headerBodySplit >= 0 ? rawResponse.Substring(headerBodySplit + 4) : rawResponse;
@@ -424,6 +429,10 @@ namespace HomeNet.Views
 
                 UpdateNavigationButtons();
             }
+            catch (OperationCanceledException)
+            {
+
+            }
             catch (Exception ex)
             {
                 tab.Document.Blocks.Clear();
@@ -431,9 +440,12 @@ namespace HomeNet.Views
             }
             finally
             {
-                searchButton.IsEnabled = true;
-                searchBar.IsEnabled = true;
-                loadingProgressBar.Visibility = Visibility.Collapsed;
+                if (ActiveTab == tab)
+                {
+                    searchButton.IsEnabled = true;
+                    searchBar.IsEnabled = true;
+                    loadingProgressBar.Visibility = Visibility.Collapsed;
+                }
             }
         }
 
@@ -501,7 +513,7 @@ namespace HomeNet.Views
 
         private void renderFieldStatus(string status)
         {
-            // Status bar removed; can be used for logging or left silent.
+
         }
 
         private void homeButton_Click(object sender, RoutedEventArgs e)
